@@ -67,10 +67,14 @@
   }
 
   /* scroll do mouse -> troca de aba (acumula o delta p/ suportar trackpad) */
+  const atEdge = (el, dir) => !el || el.scrollHeight <= el.clientHeight + 4 || (dir > 0 ? el.scrollTop + el.clientHeight >= el.scrollHeight - 4 : el.scrollTop <= 4);
+  let hold = 0;
   addEventListener('wheel', e => {
     if (e.ctrlKey || (e.target.closest && e.target.closest('#panel'))) return;
+    const sl = e.target.closest && e.target.closest('.slide');
+    if (sl && !atEdge(sl, Math.sign(e.deltaY))) { hold = Date.now(); return; }
     e.preventDefault();
-    if (locked) return;
+    if (locked || Date.now() - hold < 400) return;
     const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
     acc += d; clearTimeout(accTimer); accTimer = setTimeout(() => acc = 0, 160);
     if (Math.abs(acc) > 40) { goPage(cur + Math.sign(acc)); acc = 0; }
@@ -85,11 +89,14 @@
   });
 
   /* toque: vertical = aba, horizontal = slide */
-  let tx, ty;
-  addEventListener('touchstart', e => { tx = e.touches[0].clientX; ty = e.touches[0].clientY; }, { passive: true });
+  let tx, ty, ts, te = {};
+  addEventListener('touchstart', e => {
+    tx = e.touches[0].clientX; ty = e.touches[0].clientY;
+    ts = e.target.closest && e.target.closest('.slide'); te = { up: atEdge(ts, -1), down: atEdge(ts, 1) };
+  }, { passive: true });
   addEventListener('touchend', e => {
     const dx = e.changedTouches[0].clientX - tx, dy = e.changedTouches[0].clientY - ty;
-    if (Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx)) goPage(cur + (dy < 0 ? 1 : -1));
+    if (Math.abs(dy) > 60 && Math.abs(dy) > Math.abs(dx)) { if (dy < 0 ? te.down : te.up) goPage(cur + (dy < 0 ? 1 : -1)); }
     else if (Math.abs(dx) > 60) step(pages[cur], dx < 0 ? 1 : -1);
   }, { passive: true });
 
@@ -200,6 +207,10 @@
       <div class="row"><button data-add="p">+ Texto</button><button data-add="li">+ Item</button><button data-add="a">+ Link</button><button data-del="1">Apagar bloco</button></div>
       <label>Layout<select id="pLayout"><option value="right">Imagem à direita</option><option value="left">Imagem à esquerda</option><option value="full">Imagem no topo</option><option value="text">Só texto</option></select></label>
       <label>Alinhar<select id="pAlign"><option value="left">Esquerda</option><option value="center">Centro</option><option value="right">Direita</option></select></label>
+      <label>Altura da imagem<input type="range" id="pImgH" min="20" max="80"></label>
+      <label>Largura da imagem<input type="range" id="pImgW" min="25" max="65"></label>
+      <label>Posição da foto<input type="range" id="pImgY" min="0" max="100"></label>
+      <label>Ajuste<select id="pFit"><option value="cover">Preencher</option><option value="contain">Mostrar inteira</option></select></label>
       <div class="row"><button data-mv="-1">◀ Mover slide</button><button data-mv="1">Mover slide ▶</button></div>
       <label>Destaque<input type="color" data-k="accent"></label><label>Gradiente 1<input type="color" data-k="g1"></label>
       <label>Gradiente 2<input type="color" data-k="g2"></label><label>Gradiente 3<input type="color" data-k="g3"></label>
@@ -207,10 +218,13 @@
       <button id="pReset">Redefinir cores deste tema e fonte</button></details>`;
     document.body.appendChild(panel);
     const curSlide = () => $$('.slide', pages[cur])[pages[cur]._i];
+    const med = () => $('.media', curSlide()), g = (el, p, d) => parseFloat((el && el.style.getPropertyValue(p)) || '') || d;
     const hex = v => v[0] === '#' ? v : '#' + (v.match(/\d+/g) || [0, 0, 0]).slice(0, 3).map(n => (+n).toString(16).padStart(2, '0')).join('');
     const refresh = () => {
       const s = curSlide(), cs = getComputedStyle(root); if (!s) return;
       $('#pLayout').value = s.dataset.layout || 'right'; $('#pAlign').value = s.dataset.align || 'left';
+      $('#pImgH').value = g(med(), '--mh', 58); $('#pImgW').value = g(s, '--iw', 45); $('#pImgY').value = g(med(), '--py', 50);
+      $('#pFit').value = (med() && med().dataset.fit) || 'cover';
       $$('[data-k]', panel).forEach(i => i.value = hex(cs.getPropertyValue('--' + i.dataset.k).trim()));
       $('#pFont').value = Object.hasOwn(FONTS, settings.font) ? settings.font : 'alegreya';
     };
@@ -221,6 +235,10 @@
     $('#pFont').onchange = e => { settings.font = e.target.value; applySettings(); save(); };
     $('#pLayout').onchange = e => { curSlide().dataset.layout = e.target.value; save(); };
     $('#pAlign').onchange = e => { curSlide().dataset.align = e.target.value; save(); };
+    $('#pImgH').oninput = e => { med().style.setProperty('--mh', e.target.value + 'vh'); later(); };
+    $('#pImgW').oninput = e => { const s = curSlide(), v = +e.target.value; s.style.setProperty('--iw', v + 'fr'); s.style.setProperty('--tw', (100 - v) + 'fr'); later(); };
+    $('#pImgY').oninput = e => { med().style.setProperty('--py', e.target.value + '%'); later(); };
+    $('#pFit').onchange = e => { med().dataset.fit = e.target.value; save(); };
     $('#pReset').onclick = () => { delete settings[root.dataset.theme]; delete settings.font; applySettings(); refresh(); save(); };
     panel.addEventListener('click', e => {
       const b = e.target.closest('button'); if (!b || b.id === 'pReset') return;
@@ -255,5 +273,3 @@
   load().then(() => { pages.forEach(sync); render(); document.body.classList.add('ready'); });
 })();
 
-  load().then(() => { pages.forEach(sync); render(); document.body.classList.add('ready'); });
-})();
