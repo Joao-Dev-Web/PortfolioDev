@@ -111,3 +111,32 @@ button{font:inherit;color:inherit;cursor:pointer}
 body.admin #tools{display:flex}
 #stage{opacity:0;transition:opacity .9s ease}
 body.ready #stage{opacity:1}
+
+/* layouts e alinhamento por slide */
+.slide[data-layout=left] .media{order:-1}
+.slide[data-layout=text]{grid-template-columns:1fr}
+.slide[data-layout=text] .media{display:none}
+.slide[data-layout=full]{grid-template-columns:1fr;align-content:start}
+.slide[data-layout=full] .media{order:-1;height:min(34vh,320px)}
+.slide[data-align=center] .txt{text-align:center}
+.slide[data-align=center] .txt h3,.slide[data-align=center] .txt p,.slide[data-align=center] .txt ul{margin-inline:auto}
+.slide[data-align=right] .txt{text-align:right}
+.slide[data-align=right] .txt h3,.slide[data-align=right] .txt p,.slide[data-align=right] .txt ul{margin-left:auto}
+.slide[data-align=right] li{border-left:0;border-right:2px solid var(--accent);padding:.9rem 1.1rem .9rem 0}
+/* painel Personalizar */
+#panel{display:none;position:fixed;left:18px;bottom:calc(14px + env(safe-area-inset-bottom,0px));z-index:6;width:min(270px,calc(100vw - 36px));max-height:calc(100% - 90px);overflow:auto;
+  background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border:1px solid var(--line);border-radius:10px;padding:.5rem .8rem;font-size:.9rem}
+.editing #panel{display:block}
+#panel summary{cursor:pointer;font-weight:700;padding:.2rem 0}
+#panel .row{display:flex;flex-wrap:wrap;gap:.35rem;margin:.5rem 0}
+#panel button,#panel select{background:transparent;border:1px solid var(--line);color:var(--text);border-radius:6px;padding:.25rem .55rem;font:inherit}
+#panel select option{color:#000}
+#panel button:hover{border-color:var(--accent)}
+#panel label{display:flex;justify-content:space-between;align-items:center;gap:.6rem;margin:.45rem 0}
+#panel input[type=color]{width:42px;height:28px;border:1px solid var(--line);background:none;padding:0;border-radius:6px}
+#pReset{width:100%;margin-top:.4rem}
+@media (max-width:640px){#panel{bottom:calc(112px + env(safe-area-inset-bottom,0px))}}
+
+body.admin #tools{display:flex}
+#stage{opacity:0;transition:opacity .9s ease}
+body.ready #stage{opacity:1}
