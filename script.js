@@ -12,6 +12,19 @@
   const isAdmin = location.pathname.replace(/\/$/, '') === '/admin';
   let pass = sessionStorage.getItem('adm') || '';
   if (isAdmin) document.body.classList.add('admin');
+  let settings = {};
+  const FONTS = { alegreya: "'Alegreya',Georgia,serif", georgia: "Georgia,'Times New Roman',serif", sans: "system-ui,'Segoe UI',Arial,sans-serif", mono: "ui-monospace,Consolas,monospace" };
+  const HEX = /^#[0-9a-f]{6}$/i, KEYS = ['accent', 'g1', 'g2', 'g3'];
+  const applySettings = () => {
+    let css = '';
+    for (const t of ['dark', 'light']) {
+      const d = Object.entries(settings[t] || {}).filter(([k, v]) => KEYS.includes(k) && HEX.test(v)).map(([k, v]) => `--${k}:${v}`).join(';');
+      if (d) css += (t === 'dark' ? ':root' : ':root[data-theme="light"]') + '{' + d + '}\n';
+    }
+    if (Object.hasOwn(FONTS, settings.font)) css += 'html,body{font-family:' + FONTS[settings.font] + '}';
+    let el = $('#custom'); if (!el) { el = document.createElement('style'); el.id = 'custom'; document.head.appendChild(el); }
+    el.textContent = css;
+  };
   const snapshot = () => pages.map(p => {
     const c = $('.strip', p).cloneNode(true);
     $$('[contenteditable]', c).forEach(el => el.removeAttribute('contenteditable'));
@@ -20,14 +33,16 @@
   const save = async () => {
     if (!isAdmin || !pass) return;
     try {
-      const r = await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-password': pass }, body: JSON.stringify(snapshot()) });
+      const r = await fetch('/api/save', { method: 'POST', headers: { 'Content-Type': 'application/json', 'x-admin-password': pass }, body: JSON.stringify({ pages: snapshot(), settings }) });
       flash(r.ok ? 'Salvo no site' : r.status === 401 ? 'Senha incorreta' : 'Erro ao salvar');
     } catch (e) { flash('Servidor indisponível'); }
   };
   const load = async () => {
     try {
       const r = await fetch('content.json', { cache: 'no-store' });
-      const d = r.ok ? await r.json() : null;
+      const j = r.ok ? await r.json() : null;
+      const d = j && (Array.isArray(j) ? j : j.pages);
+      if (j && !Array.isArray(j) && j.settings) { settings = j.settings; applySettings(); }
       if (d && d.length === pages.length) d.forEach((x, i) => { $('[data-title]', pages[i]).textContent = x.title; $('.strip', pages[i]).innerHTML = x.strip; });
     } catch (e) {}
   };
@@ -53,7 +68,7 @@
 
   /* scroll do mouse -> troca de aba (acumula o delta p/ suportar trackpad) */
   addEventListener('wheel', e => {
-    if (e.ctrlKey) return;
+    if (e.ctrlKey || (e.target.closest && e.target.closest('#panel'))) return;
     e.preventDefault();
     if (locked) return;
     const d = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
@@ -62,7 +77,7 @@
   }, { passive: false });
 
   addEventListener('keydown', e => {
-    if (editing && e.target.isContentEditable) return;
+    if (editing && (e.target.isContentEditable || e.target.closest('#panel'))) return;
     if (e.key === 'ArrowDown' || e.key === 'PageDown') goPage(cur + 1);
     if (e.key === 'ArrowUp' || e.key === 'PageUp') goPage(cur - 1);
     if (e.key === 'ArrowRight') step(pages[cur], 1);
@@ -130,7 +145,7 @@
     if (!confirm('Restaurar o conteúdo original?')) return;
     try { localStorage.removeItem(KEY); } catch (e) {}
     factory.forEach((x, i) => { $('[data-title]', pages[i]).textContent = x.title; $('.strip', pages[i]).innerHTML = x.strip; pages[i]._i = 0; });
-    setEditable(); pages.forEach(sync); flash('Conteúdo restaurado'); save();
+    setEditable(); pages.forEach(sync); settings = {}; applySettings(); flash('Conteúdo restaurado'); save();
   };
   let st; document.addEventListener('input', () => { clearTimeout(st); st = setTimeout(save, 600); });
   /* links não navegam enquanto edita */
@@ -176,6 +191,69 @@
       requestAnimationFrame(loop);
     })();
   }
+
+  /* ---------- painel Personalizar (só em /admin) ---------- */
+  if (isAdmin) {
+    const root = document.documentElement, panel = document.createElement('div'); panel.id = 'panel';
+    panel.innerHTML = `<details><summary>Personalizar</summary>
+      <div class="row"><button data-c="bold" title="Negrito"><b>B</b></button><button data-c="italic" title="Itálico"><i>I</i></button><button data-c="link">Link</button></div>
+      <div class="row"><button data-add="p">+ Texto</button><button data-add="li">+ Item</button><button data-add="a">+ Link</button><button data-del="1">Apagar bloco</button></div>
+      <label>Layout<select id="pLayout"><option value="right">Imagem à direita</option><option value="left">Imagem à esquerda</option><option value="full">Imagem no topo</option><option value="text">Só texto</option></select></label>
+      <label>Alinhar<select id="pAlign"><option value="left">Esquerda</option><option value="center">Centro</option><option value="right">Direita</option></select></label>
+      <div class="row"><button data-mv="-1">◀ Mover slide</button><button data-mv="1">Mover slide ▶</button></div>
+      <label>Destaque<input type="color" data-k="accent"></label><label>Gradiente 1<input type="color" data-k="g1"></label>
+      <label>Gradiente 2<input type="color" data-k="g2"></label><label>Gradiente 3<input type="color" data-k="g3"></label>
+      <label>Fonte<select id="pFont"><option value="alegreya">Alegreya</option><option value="georgia">Georgia</option><option value="sans">Sans-serif</option><option value="mono">Monoespaçada</option></select></label>
+      <button id="pReset">Redefinir cores deste tema e fonte</button></details>`;
+    document.body.appendChild(panel);
+    const curSlide = () => $$('.slide', pages[cur])[pages[cur]._i];
+    const hex = v => v[0] === '#' ? v : '#' + (v.match(/\d+/g) || [0, 0, 0]).slice(0, 3).map(n => (+n).toString(16).padStart(2, '0')).join('');
+    const refresh = () => {
+      const s = curSlide(), cs = getComputedStyle(root); if (!s) return;
+      $('#pLayout').value = s.dataset.layout || 'right'; $('#pAlign').value = s.dataset.align || 'left';
+      $$('[data-k]', panel).forEach(i => i.value = hex(cs.getPropertyValue('--' + i.dataset.k).trim()));
+      $('#pFont').value = Object.hasOwn(FONTS, settings.font) ? settings.font : 'alegreya';
+    };
+    ['pointerenter', 'pointerdown'].forEach(ev => panel.addEventListener(ev, refresh));
+    panel.addEventListener('mousedown', e => { if (e.target.closest('button')) e.preventDefault(); });
+    let cst; const later = () => { clearTimeout(cst); cst = setTimeout(save, 600); };
+    $$('[data-k]', panel).forEach(i => i.oninput = () => { const t = root.dataset.theme; settings[t] = settings[t] || {}; settings[t][i.dataset.k] = i.value; applySettings(); later(); });
+    $('#pFont').onchange = e => { settings.font = e.target.value; applySettings(); save(); };
+    $('#pLayout').onchange = e => { curSlide().dataset.layout = e.target.value; save(); };
+    $('#pAlign').onchange = e => { curSlide().dataset.align = e.target.value; save(); };
+    $('#pReset').onclick = () => { delete settings[root.dataset.theme]; delete settings.font; applySettings(); refresh(); save(); };
+    panel.addEventListener('click', e => {
+      const b = e.target.closest('button'); if (!b || b.id === 'pReset') return;
+      const s = curSlide(), txt = $('.txt', s), sel = getSelection(), n = sel.anchorNode;
+      const near = n && (n.nodeType === 3 ? n.parentElement : n);
+      if (b.dataset.c === 'bold' || b.dataset.c === 'italic') document.execCommand(b.dataset.c);
+      else if (b.dataset.c === 'link') {
+        const a = near && near.closest('a');
+        if (!a && sel.isCollapsed) return flash('Selecione um texto para virar link');
+        const v = prompt('Endereço do link (https://...):', a ? a.getAttribute('href') : 'https://');
+        if (!v) return; if (/^\s*javascript:/i.test(v)) return flash('Endereço inválido');
+        if (a) a.setAttribute('href', v); else document.execCommand('createLink', false, v);
+      } else if (b.dataset.add) {
+        const k = b.dataset.add;
+        if (k === 'li') { let ul = $('ul', txt); if (!ul) { ul = document.createElement('ul'); txt.appendChild(ul); } ul.insertAdjacentHTML('beforeend', '<li><b>Título</b><span>Descrição</span></li>'); }
+        else { const p = document.createElement('p'); p.innerHTML = k === 'a' ? '<a href="#">Novo link</a>' : 'Novo texto'; txt.appendChild(p); }
+        setEditable();
+      } else if (b.dataset.del) {
+        const blk = near && near.closest('.txt > *, .txt li');
+        if (!blk || !s.contains(blk)) return flash('Clique em um texto para escolher o bloco');
+        const ul = blk.tagName === 'LI' && blk.parentElement.children.length === 1 ? blk.parentElement : null;
+        (ul || blk).remove();
+      } else if (b.dataset.mv) {
+        const dir = +b.dataset.mv, sib = dir < 0 ? s.previousElementSibling : s.nextElementSibling; if (!sib) return;
+        dir < 0 ? s.parentElement.insertBefore(s, sib) : s.parentElement.insertBefore(sib, s);
+        pages[cur]._i += dir; sync(pages[cur]);
+      }
+      save();
+    });
+  }
+
+  load().then(() => { pages.forEach(sync); render(); document.body.classList.add('ready'); });
+})();
 
   load().then(() => { pages.forEach(sync); render(); document.body.classList.add('ready'); });
 })();
